@@ -11,8 +11,10 @@
       <label class="form-check"><input id="gt-fill" class="form-check-input" type="checkbox" checked><span class="form-check-label">曲面</span></label>
       <label class="form-check"><input id="gt-rules" class="form-check-input" type="checkbox" checked><span class="form-check-label">直纹线</span></label>
       <label class="form-check"><input id="gt-knot" class="form-check-input" type="checkbox" checked><span class="form-check-label">结 K</span></label>
+      <label class="form-check"><input id="gt-family" class="form-check-input" type="checkbox" checked><span class="form-check-label">多面叠加</span></label>
     </div>
   </div>
+  <div class="gt-opacity-row"><label for="gt-opacity">不透明度 <output id="gt-opacity-value" class="tabular-nums">12%</output></label><input id="gt-opacity" class="form-range" type="range" min="0.03" max="0.30" step="0.01" value="0.12"><span class="text-small">θ：0</span><span class="gt-spectrum" aria-label="曲面随 θ 从红色变为紫色"></span><span class="text-small">2π</span></div>
   <div class="gt-stage"><canvas id="gt-canvas" role="img" aria-label="结上的粉色固定点 p，及位于曲面切平面内、垂直于结切线的蓝色向量；拖动旋转视角，滚轮缩放。"></canvas><div class="gt-normal"><span class="text-small">p 的法平面</span><svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="沿结的切线观察蓝色向量的方向"><circle cx="60" cy="60" r="44" fill="none" stroke="#9caaa5" stroke-width="1"/><line x1="60" y1="60" x2="104" y2="60" stroke="#727e79" stroke-dasharray="3 4"/><g id="gt-normal-arrow"><line x1="60" y1="60" x2="98" y2="60" stroke="#36a4ff" stroke-width="4"/><path d="M 91 55 L 100 60 L 91 65" fill="none" stroke="#36a4ff" stroke-width="4" stroke-linejoin="round"/></g><circle cx="60" cy="60" r="5" fill="#ff76b2"/></svg></div><div id="gt-error" role="alert" hidden></div></div>
   <div class="gt-caption text-small"><span id="gt-caption">管状邻域内 · 粉点固定 · 内向单位切向量</span><span>拖动旋转 · 滚轮缩放</span></div>
   <div class="gt-angle"><label for="gt-theta">θ</label><output id="gt-value" class="tabular-nums">0</output><span id="gt-motion" class="text-small tabular-nums">平移 0 · 转角 0</span></div>
@@ -30,6 +32,9 @@
 #gtheta-viz #gt-error{position:absolute;inset:24px;color:#fff}
 #gtheta-viz .gt-normal{position:absolute;right:10px;bottom:6px;display:flex;flex-direction:column;align-items:center;color:#d8e0dc;background:#000;pointer-events:none}
 #gtheta-viz .gt-normal svg{display:block}
+#gtheta-viz .gt-opacity-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+#gtheta-viz .gt-opacity-row input{flex:1;min-width:100px;max-width:200px}
+#gtheta-viz .gt-spectrum{width:110px;height:8px;background:linear-gradient(90deg,#ff3030,#ffbb30,#c8ff30,#30ff87,#30dbff,#4965ff,#b030ff)}
 @media(max-width:480px){#gtheta-viz .gt-stage{height:340px}#gtheta-viz #gt-motion{margin-left:0}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -40,7 +45,7 @@
   try {
     if(!window.THREE) throw Error('三维组件未能加载，请重新打开此可视化。');
     const T=window.THREE, PI=Math.PI, TAU=2*PI, A=TAU/3, R=2.25;
-    const state={theta:0,view:'cover',model:'local',fill:true,rules:true,knot:true};
+    const state={theta:0,view:'cover',model:'local',fill:true,rules:true,knot:true,family:true,opacity:.12};
     let playing=false,last=0,dirty=true,yaw=-PI/2,elevation=.26,zoom=1;
     const fixedX=.8*A, beta=1.5*fixedX;
     const fixedPoint=[fixedX,Math.sin(beta),Math.cos(beta)];
@@ -57,9 +62,9 @@
     const camera=new T.PerspectiveCamera(36,1,.05,80);camera.up.set(0,0,1);
     scene.add(new T.AmbientLight(0xffffff,1.1));
     const light=new T.DirectionalLight(0xffffff,2.5);light.position.set(-3,-5,8);scene.add(light);
-    const fillMat=new T.MeshPhongMaterial({color:0xff3030,side:T.DoubleSide,transparent:true,opacity:.25,depthWrite:false,shininess:45});
+    const fillMat=new T.MeshPhongMaterial({color:0xff3030,side:T.DoubleSide,transparent:true,opacity:state.opacity,depthWrite:false,shininess:20,forceSinglePass:true});
     const knotMat=new T.MeshPhongMaterial({color:0x00ad12,emissive:0x002b03,shininess:50});
-    const ruleMat=new T.LineBasicMaterial({color:0xff6868,transparent:true,opacity:.66});
+    const ruleMat=new T.LineBasicMaterial({color:0xff6868,transparent:true,opacity:.4,depthWrite:false});
     const fixed=new T.Group(), moving=new T.Group(), rules=new T.Group();scene.add(fixed,moving,rules);
     const tracked=[];
     const marker=new T.Mesh(new T.SphereGeometry(.085,20,14),new T.MeshBasicMaterial({color:0xff76b2}));scene.add(marker);
@@ -87,8 +92,8 @@
       const betaS=1.5*s,c=Math.cos(phase0-theta),d=Math.sin(phase0-theta);
       return [d*1.5/helixSpeed,c*Math.sin(betaS)-d*Math.cos(betaS)/helixSpeed,c*Math.cos(betaS)+d*Math.sin(betaS)/helixSpeed];
     }
-    function localPoint(s,r){
-      const v=localDirection(s,state.theta);
+    function localPoint(s,r,theta=state.theta){
+      const v=localDirection(s,theta);
       return world([s+r*v[0],Math.sin(1.5*s)+r*v[1],Math.cos(1.5*s)+r*v[2]]);
     }
     function updateVector(){
@@ -150,6 +155,61 @@
         a.needsUpdate=true;line.geometry.computeBoundingSphere();
       });
     }
+    const sampleCount=12, familyU=48, familyR=16, verticesPerFace=(familyU+1)*(familyR+1);
+    const maxVertices=(sampleCount+1)*verticesPerFace;
+    const familyGeometry=new T.BufferGeometry();
+    familyGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(maxVertices*3),3));
+    familyGeometry.setAttribute('color',new T.BufferAttribute(new Float32Array(maxVertices*3),3));
+    const familyMaterial=new T.MeshBasicMaterial({color:0xffffff,vertexColors:true,side:T.DoubleSide,transparent:true,opacity:state.opacity,depthWrite:false,forceSinglePass:true});
+    const familyMesh=new T.Mesh(familyGeometry,familyMaterial);familyMesh.frustumCulled=false;scene.add(familyMesh);
+    let triangleVertices=[],triangleOrder=[],triangleDepths=[];
+    function phaseColor(theta){return new T.Color().setHSL(.78*Math.min(1,Math.max(0,theta/TAU)),1,.5);}
+    function sampledPoint(theta,u,r){
+      if(state.model==='local')return localPoint(fixedX+arcHalfWidth*(2*u-1),collarWidth*r,theta);
+      const p=patch(A*u,r),cell=Math.floor((fixedX-theta/3)/A);p[0]+=cell*A;
+      return world(screw(p,theta));
+    }
+    function updateFamily(){
+      const phases=[];
+      for(let i=0;i<sampleCount;i++){
+        const t=TAU*i/sampleCount,d=Math.abs(t-state.theta);
+        // Avoid drawing identical pages twice at the selected phase and at 2π.
+        if(Math.min(d,TAU-d)>.002)phases.push(t);
+      }
+      phases.push(state.theta);
+      const pos=familyGeometry.attributes.position,col=familyGeometry.attributes.color;
+      triangleVertices=[];
+      phases.forEach((theta,k)=>{
+        const color=phaseColor(theta),offset=k*verticesPerFace;
+        for(let i=0;i<=familyU;i++)for(let j=0;j<=familyR;j++){
+          const index=offset+i*(familyR+1)+j;
+          pos.setXYZ(index,...sampledPoint(theta,i/familyU,j/familyR));col.setXYZ(index,color.r,color.g,color.b);
+        }
+        for(let i=0;i<familyU;i++)for(let j=0;j<familyR;j++){
+          const v=offset+i*(familyR+1)+j;
+          triangleVertices.push(v,v+1,v+familyR+1,v+1,v+familyR+2,v+familyR+1);
+        }
+      });
+      pos.needsUpdate=true;col.needsUpdate=true;
+      familyGeometry.setIndex(triangleVertices);
+      triangleOrder=Array.from({length:triangleVertices.length/3},(_,i)=>i);
+      triangleDepths=new Float32Array(triangleOrder.length);
+    }
+    function sortFamily(){
+      if(!familyMesh.visible)return;
+      camera.updateMatrixWorld();
+      const m=camera.matrixWorldInverse.elements,p=familyGeometry.attributes.position.array;
+      for(let t=0;t<triangleOrder.length;t++){
+        let z=0;
+        for(let j=0;j<3;j++){const k=triangleVertices[t*3+j]*3;z+=m[2]*p[k]+m[6]*p[k+1]+m[10]*p[k+2]+m[14];}
+        triangleDepths[t]=z/3;
+      }
+      // Sort triangles across ALL pages, not just each mesh's center.
+      triangleOrder.sort((a,b)=>triangleDepths[a]-triangleDepths[b]);
+      const a=familyGeometry.index.array;
+      triangleOrder.forEach((t,i)=>{a[3*i]=triangleVertices[3*t];a[3*i+1]=triangleVertices[3*t+1];a[3*i+2]=triangleVertices[3*t+2];});
+      familyGeometry.index.needsUpdate=true;
+    }
     function clearGroup(group){while(group.children.length){const child=group.children[0];child.geometry.dispose();group.remove(child);}}
     function buildFixed(){
       clearGroup(fixed);
@@ -175,15 +235,23 @@
         if(object.isMesh)object.geometry.computeVertexNormals();
       }
       const local=state.model==='local';
-      moving.visible=!local;sheet.visible=state.fill;rules.visible=!local&&state.rules;fixed.visible=state.knot;
-      collar.visible=local&&state.fill;collarRules.visible=local&&state.rules;
+      moving.visible=!local;sheet.visible=state.fill&&!state.family;rules.visible=!local&&state.rules;fixed.visible=state.knot;
+      collar.visible=local&&state.fill&&!state.family;collarRules.visible=local&&state.rules;
+      familyMesh.visible=state.family&&state.fill;
+      fillMat.color.copy(phaseColor(state.theta));ruleMat.color.copy(phaseColor(state.theta));
+      fillMat.opacity=state.opacity;familyMaterial.opacity=state.opacity;
+      ruleMat.opacity=Math.min(.55,state.opacity*2.5);
+      if(familyMesh.visible)updateFamily();
       if(local)updateCollar();
       updateVector();
       $('#gt-theta').value=state.theta;$('#gt-value').textContent=piLabel(state.theta);
       $('#gt-theta').setAttribute('aria-valuetext',piLabel(state.theta));
       $('#gt-motion').textContent=local?'局部纤维相位 '+piLabel(state.theta):'平移 '+piLabel(state.theta/3)+' · 转角 '+piLabel(state.theta/2);
       $('#gt-title').textContent=local?'结附近的局部纤维':'原始 Gθ · 一个直纹片';
+      if(state.family)$('#gt-title').textContent=local?'局部纤维 · 彩虹叠加':'原始 Gθ · 彩虹叠加';
       $('#gt-caption').textContent=local?'管状邻域内 · 粉点固定 · 内向单位切向量':'原始直纹片 · 未补全、未平滑';
+      if(state.family)$('#gt-caption').textContent+=' · 12 个相位 + 当前 θ';
+      $('#gt-opacity-value').textContent=Math.round(state.opacity*100)+'%';
       dirty=true;
     }
     function cameraUpdate(){
@@ -193,7 +261,7 @@
       camera.lookAt(center);dirty=true;
     }
     function save(){
-      if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{theta:state.theta,thetaOverPi:state.theta/PI,view:state.view,model:state.model,fixedPointX:fixedX,tangentVector:state.model==='local'?currentVector:null,patch:state.model==='local'?'smooth tubular local page; not a global Rolfsen reconstruction':'raw ruled patch; no smooth normal framing claimed'},privateContent:{...state,yaw,elevation,zoom}}).catch(()=>{});
+      if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{theta:state.theta,thetaOverPi:state.theta/PI,view:state.view,model:state.model,family:state.family,surfaceOpacity:state.opacity,fixedPointX:fixedX,tangentVector:state.model==='local'?currentVector:null,patch:state.model==='local'?'smooth tubular local page; not a global Rolfsen reconstruction':'raw ruled patch; no smooth normal framing claimed'},privateContent:{...state,yaw,elevation,zoom}}).catch(()=>{});
     }
     function stop(){playing=false;$('#gt-play').textContent='播放';}
     function apply(saved){
@@ -201,11 +269,12 @@
       if(Number.isFinite(s.theta))state.theta=Math.max(0,Math.min(TAU,s.theta));
       if(s.view==='torus'||s.view==='cover')state.view=s.view;
       if(s.model==='raw'||s.model==='local')state.model=s.model;
-      for(const key of ['fill','rules','knot'])if(typeof s[key]==='boolean')state[key]=s[key];
+      for(const key of ['fill','rules','knot','family'])if(typeof s[key]==='boolean')state[key]=s[key];
+      if(Number.isFinite(s.opacity))state.opacity=Math.max(.03,Math.min(.3,s.opacity));
       if(Number.isFinite(s.yaw))yaw=s.yaw;
       if(Number.isFinite(s.elevation))elevation=Math.max(-1.4,Math.min(1.4,s.elevation));
       if(Number.isFinite(s.zoom))zoom=Math.max(.6,Math.min(2,s.zoom));
-      $('#gt-view').value=state.view;$('#gt-model').value=state.model;for(const key of ['fill','rules','knot'])$('#gt-'+key).checked=state[key];
+      $('#gt-view').value=state.view;$('#gt-model').value=state.model;$('#gt-opacity').value=state.opacity;for(const key of ['fill','rules','knot','family'])$('#gt-'+key).checked=state[key];
       stop();buildFixed();update();cameraUpdate();
     }
     $('#gt-theta').addEventListener('input',()=>{stop();state.theta=Number($('#gt-theta').value);update();});
@@ -217,7 +286,9 @@
     });
     $('#gt-view').addEventListener('change',()=>{state.view=$('#gt-view').value;yaw=state.view==='torus'?-1.03:-1.57;elevation=state.view==='torus'?.58:.26;zoom=1;buildFixed();update();cameraUpdate();save();});
     $('#gt-model').addEventListener('change',()=>{state.model=$('#gt-model').value;update();save();});
-    for(const key of ['fill','rules','knot'])$('#gt-'+key).addEventListener('change',()=>{state[key]=$('#gt-'+key).checked;update();save();});
+    for(const key of ['fill','rules','knot','family'])$('#gt-'+key).addEventListener('change',()=>{state[key]=$('#gt-'+key).checked;update();save();});
+    $('#gt-opacity').addEventListener('input',()=>{state.opacity=Number($('#gt-opacity').value);update();});
+    $('#gt-opacity').addEventListener('change',save);
     let drag=null;
     canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);});
     canvas.addEventListener('pointermove',e=>{if(!drag)return;yaw-=(e.clientX-drag.x)*.008;elevation=Math.max(-1.4,Math.min(1.4,elevation+(e.clientY-drag.y)*.008));drag={x:e.clientX,y:e.clientY};cameraUpdate();});
@@ -230,7 +301,7 @@
       if(!root.isConnected){observer.disconnect();renderer.dispose();return;}
       requestAnimationFrame(animate);
       if(playing){const dt=Math.min((now-last)/1000,.08);last=now;state.theta=Math.min(TAU,state.theta+dt*TAU/18);update();if(state.theta===TAU){stop();save();$('#gt-status').textContent='动画完成：θ = 2π';}}
-      if(dirty){renderer.render(scene,camera);dirty=false;}
+      if(dirty){sortFamily();renderer.render(scene,camera);dirty=false;}
     }
     requestAnimationFrame(animate);
   } catch(error){$('#gt-error').hidden=false;$('#gt-error').textContent=error.message;}

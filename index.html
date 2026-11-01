@@ -30,7 +30,7 @@ h3{margin:0 0 12px}
       <select class="form-select" id="gt-model"><option value="local">平滑局部纤维</option><option value="raw">原直纹片 · 对照</option></select>
     </label>
     <label class="form-label">视图
-      <select class="form-select" id="gt-view"><option value="torus">闭合 · 三叶结</option><option value="cover">展开 · 万有覆盖</option></select>
+      <select class="form-select" id="gt-view"><option value="cover-1">① 单片 · 展开（万有覆盖）</option><option value="torus-1">② 单片 · 闭合（三叶结）</option><option value="cover-3">③ 三片 · 展开（万有覆盖）</option><option value="torus-3">④ 三片 · 闭合（三叶结 + 圆盘）</option></select>
     </label>
     <div class="viz-row">
       <label class="form-check"><input id="gt-fill" class="form-check-input" type="checkbox" checked><span class="form-check-label">曲面</span></label>
@@ -73,7 +73,7 @@ h3{margin:0 0 12px}
   try {
     if(!window.THREE) throw Error('三维组件未能加载，请重新打开此可视化。');
     const T=window.THREE, PI=Math.PI, TAU=2*PI, A=TAU/3, R=2.25, THETA_MAX=12*PI;   // full period: translation 4π ≡ 0 and twist 6π ≡ 0, so the strips come back exactly
-    const state={theta:0,view:'cover',fold:0,model:'raw',fill:true,rules:true,knot:true,family:false,shadow:true,disks:true,opacity:.85};
+    const state={theta:0,view:'cover',count:1,fold:0,model:'raw',fill:true,rules:true,knot:true,family:false,shadow:true,disks:true,opacity:.85};
     let playing=false,last=0,dirty=true,yaw=-PI/2,elevation=.26,zoom=1,foldAnim=null,builtFold=-1;
     const CAM={cover:{yaw:-1.57,elevation:.26,dist:11},torus:{yaw:-1.03,elevation:.58,dist:12}};
     const fixedX=.8*A, beta=1.5*fixedX;
@@ -200,7 +200,7 @@ h3{margin:0 0 12px}
     for(let c=0;c<cells;c++){
       const g=c===0?sheetGeometry:sheetGeometry.clone();
       if(c>0){const a=g.attributes.position;for(let i=0;i<a.count;i++)a.setX(i,a.getX(i)+c*A);}
-      const m=track(new T.Mesh(g,sheetMat));m.userData.group=3;m.castShadow=m.receiveShadow=true;moving.add(m);sheets.push(m);
+      const m=track(new T.Mesh(g,sheetMat));m.userData.group=3;m.userData.cell=c;m.castShadow=m.receiveShadow=true;moving.add(m);sheets.push(m);
     }
     const ruleMats=[];
     for(let i=1;i<strips;i++){
@@ -209,7 +209,7 @@ h3{margin:0 0 12px}
         const points=[];
         for(let j=0;j<64;j++){const p=patch(A*i/strips,j/64),q=patch(A*i/strips,(j+1)/64);points.push(p[0]+c*A,p[1],p[2],q[0]+c*A,q[1],q[2]);}
         const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(points,3));
-        const line=track(new T.LineSegments(g,rm));line.userData.group=2;rules.add(line);
+        const line=track(new T.LineSegments(g,rm));line.userData.group=2;line.userData.cell=c;rules.add(line);
       }
     }
     // Rolfsen's two disks. At λ=1 the red edges (u=0) of the three sheets tile the longitude
@@ -371,9 +371,9 @@ h3{margin:0 0 12px}
       }
       const local=state.model==='local';
       moving.visible=!local;rules.visible=!local&&state.rules;fixed.visible=state.knot;
-      for(const m of sheets)m.visible=state.fill&&!state.family;sheetMat.opacity=state.opacity;sheetMat.depthWrite=state.opacity>.5;for(const m of ruleMats)m.opacity=Math.min(.8,.3+state.opacity*.5);
+      for(const m of sheets)m.visible=state.fill&&!state.family&&m.userData.cell<state.count;for(const l of rules.children)l.visible=l.userData.cell<state.count;sheetMat.opacity=state.opacity;sheetMat.depthWrite=state.opacity>.5;for(const m of ruleMats)m.opacity=Math.min(.8,.3+state.opacity*.5);
       light.castShadow=state.shadow;ground.visible=state.shadow;
-      const diskAlpha=(state.disks&&!local&&!state.family)?Math.max(0,Math.min(1,(state.fold-.97)/.03)):0;
+      const diskAlpha=(state.disks&&!local&&!state.family&&state.count===3)?Math.max(0,Math.min(1,(state.fold-.97)/.03)):0;
       for(const [d,ring,off] of [[diskA,ringA,0],[diskB,ringB,PI]]){
         d.visible=ring.visible=diskAlpha>0;
         if(d.visible){updateDisk(d,ring,state.theta/2+off);d.material.opacity=.55*diskAlpha;ring.material.opacity=diskAlpha;}
@@ -388,9 +388,9 @@ h3{margin:0 0 12px}
       updateVector();
       $('#gt-value').textContent=piLabel(state.theta);
       $('#gt-motion').textContent=local?'局部纤维相位 '+piLabel(state.theta):'平移 '+piLabel(state.theta/3)+' · 转角 '+piLabel(state.theta/2);
-      $('#gt-title').textContent=local?'结附近的局部纤维':'原始 Gθ · 三个直纹片 · 彩虹细条';
+      $('#gt-title').textContent=local?'结附近的局部纤维':(state.count===3?'原始 Gθ · 三个直纹片 · 彩虹细条':'原始 Gθ · 一个直纹片 · 彩虹细条');
       if(state.family)$('#gt-title').textContent=local?'局部纤维 · 彩虹叠加':'原始 Gθ · 彩虹叠加';
-      $('#gt-caption').textContent=local?'管状邻域内 · 粉点固定 · 内向单位切向量':'三个直纹片 · 各 23 个细条 · 随 θ 沿结平移并回卷 · 闭合时红边拼成一圈、紫边拼成一圈，各接一个圆盘（无限大的一侧渐隐）';
+      $('#gt-caption').textContent=local?'管状邻域内 · 粉点固定 · 内向单位切向量':(state.count===3?'三个直纹片 · 各 23 个细条 · 随 θ 沿结平移并回卷 · 闭合时红边拼成一圈、紫边拼成一圈，各接一个圆盘（无限大的一侧渐隐）':'一个直纹片 · 23 个细条各一色 · 随 θ 沿结平移，出右端从左端回来');
       const sheetLegend=!local&&!state.family;$('#gt-spec-lo').textContent=sheetLegend?'条 1':'θ：0';$('#gt-spec-hi').textContent=sheetLegend?'条 23':'2π';
       if(state.family)$('#gt-caption').textContent+=' · 12 个相位 + 当前 θ';
       $('#gt-opacity-value').textContent=Math.round(state.opacity*100)+'%';
@@ -410,6 +410,7 @@ h3{margin:0 0 12px}
       const s=saved?.privateContent;if(!s)return;
       if(Number.isFinite(s.theta))state.theta=Math.max(0,Math.min(THETA_MAX,s.theta));
       if(s.view==='torus'||s.view==='cover'){state.view=s.view;state.fold=state.view==='torus'?1:0;}
+      if(s.count===1||s.count===3)state.count=s.count;
       if(Number.isFinite(s.fold))state.fold=Math.max(0,Math.min(1,s.fold));foldAnim=null;
       if(s.model==='raw'||s.model==='local')state.model=s.model;
       for(const key of ['fill','rules','knot','family','shadow','disks'])if(typeof s[key]==='boolean')state[key]=s[key];
@@ -417,16 +418,17 @@ h3{margin:0 0 12px}
       if(Number.isFinite(s.yaw))yaw=s.yaw;
       if(Number.isFinite(s.elevation))elevation=Math.max(-1.4,Math.min(1.4,s.elevation));
       if(Number.isFinite(s.zoom))zoom=Math.max(.6,Math.min(2,s.zoom));
-      $('#gt-view').value=state.view;$('#gt-model').value=state.model;$('#gt-opacity').value=state.opacity;for(const key of ['fill','rules','knot','family','shadow','disks'])$('#gt-'+key).checked=state[key];
+      $('#gt-view').value=state.view+'-'+state.count;$('#gt-model').value=state.model;$('#gt-opacity').value=state.opacity;for(const key of ['fill','rules','knot','family','shadow','disks'])$('#gt-'+key).checked=state[key];
       stop();buildFixed();update();cameraUpdate();
     }
     $('#gt-play').addEventListener('click',()=>{if(playing)return;playing=true;last=performance.now();$('#gt-status').textContent='播放中，0 → 12π 循环';});
     $('#gt-pause').addEventListener('click',()=>{stop();save();$('#gt-status').textContent='已暂停：θ = '+piLabel(state.theta);});
     $('#gt-reset').addEventListener('click',()=>{stop();state.theta=0;update();save();$('#gt-status').textContent='已重置：θ = 0';});
-    $('#gt-view').addEventListener('change',()=>{state.view=$('#gt-view').value;zoom=1;foldAnim={from:state.fold,to:state.view==='torus'?1:0,start:performance.now(),duration:3000};});
-    $('#gt-fold').addEventListener('input',()=>{foldAnim=null;state.fold=Number($('#gt-fold').value);state.view=state.fold>=.5?'torus':'cover';$('#gt-view').value=state.view;update();cameraUpdate();});
+    $('#gt-view').addEventListener('change',()=>{const [v,c]=$('#gt-view').value.split('-');state.view=v;state.count=Number(c);const to=v==='torus'?1:0;
+      if(Math.abs(state.fold-to)>1e-6){zoom=1;foldAnim={from:state.fold,to,start:performance.now(),duration:3000};}else{update();save();}});
+    $('#gt-fold').addEventListener('input',()=>{foldAnim=null;state.fold=Number($('#gt-fold').value);state.view=state.fold>=.5?'torus':'cover';$('#gt-view').value=state.view+'-'+state.count;update();cameraUpdate();});
     $('#gt-fold').addEventListener('change',save);
-    root.gtSet={theta:v=>{stop();state.theta=Math.max(0,Math.min(THETA_MAX,Number(v)||0));update();save();},fold:v=>{foldAnim=null;state.fold=Math.max(0,Math.min(1,Number(v)||0));state.view=state.fold>=.5?'torus':'cover';$('#gt-view').value=state.view;update();cameraUpdate();}};
+    root.gtSet={theta:v=>{stop();state.theta=Math.max(0,Math.min(THETA_MAX,Number(v)||0));update();save();},fold:v=>{foldAnim=null;state.fold=Math.max(0,Math.min(1,Number(v)||0));state.view=state.fold>=.5?'torus':'cover';$('#gt-view').value=state.view+'-'+state.count;update();cameraUpdate();}};
     $('#gt-model').addEventListener('change',()=>{state.model=$('#gt-model').value;update();save();});
     for(const key of ['fill','rules','knot','family','shadow','disks'])$('#gt-'+key).addEventListener('change',()=>{state[key]=$('#gt-'+key).checked;update();save();});
     $('#gt-opacity').addEventListener('input',()=>{state.opacity=Number($('#gt-opacity').value);update();});
@@ -438,7 +440,7 @@ h3{margin:0 0 12px}
     canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.6,Math.min(2,zoom*Math.exp(e.deltaY*.001)));cameraUpdate();save();},{passive:false});
     const observer=new ResizeObserver(()=>{const w=canvas.parentElement.clientWidth,h=canvas.parentElement.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();cameraUpdate();});observer.observe(canvas.parentElement);
     window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState)apply(event.detail.globals.widgetState);});
-    $('#gt-view').value=state.view;$('#gt-model').value=state.model;$('#gt-opacity').value=state.opacity;for(const key of ['fill','rules','knot','family','shadow','disks'])$('#gt-'+key).checked=state[key];buildFixed();update();apply(window.openai?.widgetState);cameraUpdate();
+    $('#gt-view').value=state.view+'-'+state.count;$('#gt-model').value=state.model;$('#gt-opacity').value=state.opacity;for(const key of ['fill','rules','knot','family','shadow','disks'])$('#gt-'+key).checked=state[key];buildFixed();update();apply(window.openai?.widgetState);cameraUpdate();
     function animate(now){
       if(!root.isConnected){observer.disconnect();renderer.dispose();return;}
       requestAnimationFrame(animate);
@@ -459,7 +461,7 @@ h3{margin:0 0 12px}
 <script>
 (()=>{const p=new URLSearchParams(location.search),root=document.getElementById('gtheta-viz');
 const set=(id,v,ev)=>{const e=document.getElementById(id);if(!e||v==null)return;if(e.type==='checkbox')e.checked=v!=='0';else e.value=v;e.dispatchEvent(new Event(ev||'input'));};
-set('gt-model',p.get('model'),'change');set('gt-opacity',p.get('opacity'));
+set('gt-model',p.get('model'),'change');if(p.get('count')!=null){const v=document.getElementById('gt-view');v.value=(p.get('fold')==='1'?'torus':'cover')+'-'+p.get('count');v.dispatchEvent(new Event('change'));}set('gt-opacity',p.get('opacity'));
 for(const k of ['fill','rules','knot','family','shadow','disks'])set('gt-'+k,p.get(k),'change');
 if(p.get('fold')!=null)root.gtSet.fold(p.get('fold'));if(p.get('theta')!=null)root.gtSet.theta(p.get('theta'));
 if(p.get('yaw')!=null||p.get('elev')!=null){/* camera is adjusted by dragging; no param */}
